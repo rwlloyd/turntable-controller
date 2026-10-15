@@ -21,10 +21,11 @@ Do not select a supply voltage or driver current limit until the exact motor and
 
 ## Architecture
 
-- `include/config.h`: central GPIO, active polarity, mechanics, and provisional limits.
-- `include/motion_core.h`: host-testable angle/pulse conversion, absolute direction policy, scan target generation, and settings validation.
-- `src/main.cpp`: non-blocking AccelStepper motion servicing, manual/jog/continuous operation, scan state machine, REST API, WebSocket snapshots, AP, LittleFS, and NVS settings.
-- `data/`: responsive static browser interface served from LittleFS.
+- `TurntableController/TurntableController.ino`: Arduino IDE sketch entry point.
+- `TurntableController/config.h`: central GPIO, active polarity, mechanics, and provisional limits.
+- `TurntableController/motion_core.h`: host-testable angle/pulse conversion, absolute direction policy, scan target generation, and settings validation.
+- `TurntableController/firmware.cpp`: non-blocking AccelStepper motion servicing, manual/jog/continuous operation, scan state machine, REST API, WebSocket snapshots, AP, LittleFS, and NVS settings.
+- `TurntableController/data/`: responsive static browser interface served from LittleFS.
 - `test/test_motion_core.cpp`: hardware-independent C++ tests.
 
 Motion is serviced with `AccelStepper::run()` from the main loop. HTTP, WebSocket, filesystem, and JSON work uses ESP32Async's asynchronous server. Access to controller/motion state is serialized because asynchronous callbacks run separately from the Arduino loop. This avoids intentional long blocking movement loops, but callbacks and Wi-Fi activity can still affect pulse timing; scope/logic-analyzer tests under network load are required before relying on the controller. AccelStepper and the actual motor/driver may not meet every requested speed or acceleration.
@@ -81,19 +82,16 @@ After movement and settling, a view becomes Ready. Default mode waits for `POST 
 
 A browser disconnect does not cancel an accepted scan. Jog instead uses a renewable lease (default 1,200 ms); disconnect/release stops the jog with controlled deceleration. Continuous rotation is a manual operation using replenished finite target segments and continues until Stop.
 
-## Build and upload
+## Arduino IDE setup, build, and upload
 
-Install PlatformIO Core and USB drivers for the board. The project pins the ESP32 platform and constrains library versions in `platformio.ini`.
+1. Install Arduino IDE 2 and the **esp32** boards package from Espressif Systems using Boards Manager.
+2. Install these libraries using Library Manager: **AccelStepper**, **ArduinoJson**, **AsyncTCP**, and **ESPAsyncWebServer**. AsyncTCP and ESPAsyncWebServer are maintained by ESP32Async.
+3. Open `TurntableController/TurntableController.ino`. Select **ESP32 Dev Module**, the correct serial port, and a partition scheme that includes a filesystem partition.
+4. Click **Verify** to compile, then **Upload** to flash the firmware.
+5. To install the web interface, install an Arduino IDE 2-compatible ESP32 LittleFS data uploader. It should upload the sketch's `TurntableController/data/` directory; run its **Upload LittleFS** action separately from the firmware upload.
+6. Open Serial Monitor at 115200 baud.
 
-```sh
-pio run -e esp32dev
-pio run -e esp32dev -t upload
-pio device monitor -b 115200
-pio run -e esp32dev -t buildfs
-pio run -e esp32dev -t uploadfs
-```
-
-The default ESP32 4 MB partition layout provides NVS and a filesystem partition used by LittleFS. `uploadfs` writes the filesystem image; it is not intended to erase NVS, but verify the selected board/partition and uploader behavior before the first deployment. `upload` normally updates the app partition without clearing NVS. Do not use an erase-flash command unless you intend to reset saved settings. On a filesystem mount failure the controller still starts, but there will be no web UI until a valid LittleFS image is uploaded.
+Choose a partition scheme that provides NVS and a filesystem partition used by LittleFS. The filesystem uploader writes the filesystem image separately from the firmware; verify the selected board, partition, and uploader behavior before first deployment. Firmware upload normally updates the app partition without clearing NVS. Do not erase the flash unless you intend to reset saved settings. On a filesystem mount failure the controller still starts, but there will be no web UI until a valid LittleFS image is uploaded.
 
 The initial AP defaults are SSID `Turntable-Setup`, password `turntable`, URL `http://192.168.4.1/`. These are public factory defaults, not private credentials; change them in Settings for deployment. SSID/password and motion preferences persist in ESP32 Preferences/NVS. The Wi-Fi radio restarts with new AP credentials only after a reboot. Position, active motion, and scan progress are never persisted.
 
@@ -168,16 +166,8 @@ The status endpoint excludes the AP password. Settings accept `ssid`, `password`
 Host-side conversion and scan tests can run without ESP32 hardware:
 
 ```sh
-g++ -std=c++17 -Wall -Wextra -Werror -Iinclude test/test_motion_core.cpp -o /tmp/test_motion_core
+g++ -std=c++17 -Wall -Wextra -Werror test/test_motion_core.cpp -o /tmp/test_motion_core
 /tmp/test_motion_core
-```
-
-PlatformIO test/build commands:
-
-```sh
-pio test -e native
-pio run -e esp32dev
-pio run -e esp32dev -t buildfs
 ```
 
 Commission cautiously:
