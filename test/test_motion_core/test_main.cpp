@@ -20,9 +20,10 @@ void test_absolute_and_fractional_targets() {
   int64_t target = 0;
   for (int i = 0; i < 10; ++i) {
     target = relativeTargetPulses(exact, 0.1);
-    exact += 0.1L * config::PULSES_PER_TABLE_REV / 360.0L;
+    exact = relativePositionExactPulses(exact, 0.1);
   }
   TEST_ASSERT_EQUAL_INT64(18, target);
+  TEST_ASSERT_DOUBLE_WITHIN(1e-8, 17.7777777778, static_cast<double>(exact));
 }
 
 void test_scan_generation() {
@@ -54,6 +55,8 @@ void test_scan_state_transitions() {
   TEST_ASSERT_TRUE(sequence.ready);
   TEST_ASSERT_FALSE(sequence.resume());
   TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanSequence::AcknowledgeResult::Advanced),
+                        static_cast<int>(sequence.acknowledge()));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanSequence::AcknowledgeResult::Invalid),
                         static_cast<int>(sequence.acknowledge()));
   const int64_t target = sequence.targetPulse;
   TEST_ASSERT_TRUE(sequence.requestPause());

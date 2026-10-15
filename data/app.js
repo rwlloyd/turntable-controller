@@ -47,6 +47,9 @@
     $("scan-state").textContent = scan.state || "idle";
     $("scan-view").textContent = scan.active ? `${scan.viewIndex} / ${scan.viewCount}` : "—";
     $("scan-target").textContent = scan.active ? `${Number(scan.targetAngle).toFixed(2)}°` : "—";
+    const progress = Number(scan.progressPercent || 0);
+    $("scan-progress").value = progress;
+    $("scan-percent").textContent = `${progress.toFixed(0)}%`;
     if (scan.message) $("scan-message").textContent = scan.message;
     $("scan-ack").disabled = !scan.active || !scan.ready;
     $("scan-pause").disabled = !scan.active || scan.state === "paused";

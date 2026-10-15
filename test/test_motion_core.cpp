@@ -23,9 +23,10 @@ int main() {
   int64_t repeatedTarget = 0;
   for (int i = 0; i < 10; ++i) {
     repeatedTarget = relativeTargetPulses(exactPulses, 0.1);
-    exactPulses += 0.1L * config::PULSES_PER_TABLE_REV / 360.0L;
+    exactPulses = relativePositionExactPulses(exactPulses, 0.1);
   }
   assert(repeatedTarget == 18);
+  assert(std::abs(static_cast<double>(exactPulses) - 17.7777777778) < 1e-8);
 
   assert(std::abs(normalizeDegrees(-10.0) - 350.0) < 1e-9);
   assert(absoluteTargetPulses(0, 0, 350, DirectionPolicy::Shortest) == -178);
@@ -60,6 +61,7 @@ int main() {
   assert(!sequence.resume());
   assert(sequence.state == ScanState::Ready);
   assert(sequence.acknowledge() == ScanSequence::AcknowledgeResult::Advanced);
+  assert(sequence.acknowledge() == ScanSequence::AcknowledgeResult::Invalid);
   const int64_t interruptedTarget = sequence.targetPulse;
   assert(sequence.requestPause());
   sequence.stoppedAfterPause(false);

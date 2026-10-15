@@ -27,7 +27,7 @@ Do not select a supply voltage or driver current limit until the exact motor and
 - `data/`: responsive static browser interface served from LittleFS.
 - `test/test_motion_core.cpp`: hardware-independent C++ tests.
 
-Motion is serviced with `AccelStepper::run()` from the main loop. HTTP, WebSocket, filesystem, and JSON work uses ESP32Async's asynchronous server. This avoids intentional long blocking movement loops, but asynchronous callbacks and Wi-Fi activity can still affect pulse timing; scope/logic-analyzer tests under network load are required before relying on the controller. AccelStepper and the actual motor/driver may not meet every requested speed or acceleration.
+Motion is serviced with `AccelStepper::run()` from the main loop. HTTP, WebSocket, filesystem, and JSON work uses ESP32Async's asynchronous server. Access to controller/motion state is serialized because asynchronous callbacks run separately from the Arduino loop. This avoids intentional long blocking movement loops, but callbacks and Wi-Fi activity can still affect pulse timing; scope/logic-analyzer tests under network load are required before relying on the controller. AccelStepper and the actual motor/driver may not meet every requested speed or acceleration.
 
 ## GPIO and wiring
 
@@ -161,7 +161,7 @@ Example status (angles and pulses are estimates):
 }
 ```
 
-The status endpoint excludes the AP password. Settings accept `ssid`, `password`, `maxSpeedDegreesPerSecond`, `accelerationDegreesPerSecondSquared`, `settleMs`, and `jogLeaseMs`; omitted values remain unchanged. The server bounds speed to 0.5–30°/s, acceleration to 0.5–30°/s², settling to 0–60,000 ms, and jog lease to 300–5,000 ms. Firmware values must still be experimentally verified on the specific machine.
+The status endpoint excludes the AP password. Settings accept `ssid`, `password`, `maxSpeedDegreesPerSecond`, `accelerationDegreesPerSecondSquared`, `settleMs`, `jogLeaseMs`, `defaultScanDegrees`, `defaultScanViews`, `autoAdvanceDefault`, and `returnToStartDefault`; omitted values remain unchanged. The server bounds speed to 0.5–30°/s, acceleration/deceleration to a shared 0.5–30°/s² ramp, scan angle to 0.1–3,600°, scan views to 1–1,000, settling to 0–60,000 ms, and jog lease to 300–5,000 ms. Firmware values must still be experimentally verified on the specific machine. NVS write failures return `settings_persist_failed`; partial NVS writes must be checked after reboot.
 
 ## Tests and commissioning
 

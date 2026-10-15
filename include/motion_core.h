@@ -21,12 +21,19 @@ inline int64_t pulsesFromDegrees(double degrees) {
       degrees * config::PULSES_PER_TABLE_REV / config::DEGREES_PER_REV));
 }
 
+inline long double relativePositionExactPulses(long double currentExactPulses,
+                                              double deltaDegrees) {
+  if (!finite(deltaDegrees)) return currentExactPulses;
+  return currentExactPulses +
+      static_cast<long double>(deltaDegrees) * config::PULSES_PER_TABLE_REV /
+          config::DEGREES_PER_REV;
+}
+
 inline int64_t relativeTargetPulses(long double currentExactPulses,
                                     double deltaDegrees) {
   if (!finite(deltaDegrees)) return 0;
-  const long double target = currentExactPulses +
-      static_cast<long double>(deltaDegrees) * config::PULSES_PER_TABLE_REV /
-          config::DEGREES_PER_REV;
+  const long double target =
+      relativePositionExactPulses(currentExactPulses, deltaDegrees);
   if (!std::isfinite(target) ||
       target > static_cast<long double>(std::numeric_limits<int64_t>::max()) ||
       target < static_cast<long double>(std::numeric_limits<int64_t>::min())) {

@@ -46,6 +46,8 @@ SemaphoreHandle_t controllerMutex = nullptr;
 Settings settings;
 
 MotionKind motion = MotionKind::Idle;
+bool motorEnabled = false;
+bool positionVerified = false;
 ScanSequence scanSequence;
 ScanState& scanState = scanSequence.state;
 ScanDefinition& scan = scanSequence.definition;
@@ -65,6 +67,7 @@ uint16_t& scanViews = scanSequence.viewCount;
 float activeSpeedDps = config::DEFAULT_MAX_SPEED_DPS;
 int64_t zeroPulse = 0;
 long double exactPositionPulses = 0.0L;
+long expectedTargetPulse = 0;
 int64_t& scanStartPulse = scanSequence.startPulse;
 int64_t& scanTargetPulse = scanSequence.targetPulse;
 uint32_t jogExpiry = 0;
@@ -133,6 +136,7 @@ void moveToPulses(int64_t target, MotionKind kind, float speedDps) {
   setEnabled(true);
   setMotionLimits(speedDps);
   motion = kind;
+  expectedTargetPulse = static_cast<long>(target);
   stepper.moveTo(static_cast<long>(target));
 }
 
@@ -210,7 +214,7 @@ JsonDocument makeStatus() {
   doc["scan"]["viewCount"] = scanViews;
   doc["scan"]["progressPercent"] =
       scanActive && scanViews > 0
-          ? static_cast<double>(scanView + 1) * 100.0 / scanViews
+          ? static_cast<double>(scanView) * 100.0 / scanViews
           : (scanState == ScanState::Complete ? 100.0 : 0.0);
   doc["scan"]["targetAngle"] =
       turntable::normalizeDegrees(turntable::degreesFromPulses(scanTargetPulse - zeroPulse));
@@ -244,8 +248,9 @@ void sendStatus(AsyncWebServerRequest* request, int status = 200) {
 void broadcastStatus() {
   lockController();
   JsonDocument doc = makeStatus();
-  websocket.textAll(jsonString(doc));
+  String body = jsonString(doc);
   unlockController();
+  websocket.textAll(body);
 }
 
 bool checkOperationId(JsonDocument& doc, AsyncWebServerRequest* request,
@@ -392,6 +397,22 @@ void dispatchCommand(AsyncWebServerRequest* request, JsonDocument& doc) {
       return;
     }
     const bool credentialsChanged = ssid != settings.ssid || password != settings.password;
+    bool persisted = true;
+    persisted &= preferences.putString("ssid", ssid) == ssid.length();
+    persisted &= preferences.putString("password", password) == password.length();
+    persisted &= preferences.putFloat("maxSpeed", nextSpeed) > 0;
+    persisted &= preferences.putFloat("accel", nextAcceleration) > 0;
+    persisted &= preferences.putUInt("settle", settle) > 0;
+    persisted &= preferences.putUInt("jogLease", lease) > 0;
+    persisted &= preferences.putFloat("scanDegrees", scanDegrees) > 0;
+    persisted &= preferences.putUShort("scanViews", scanViewsDefault) > 0;
+    persisted &= preferences.putBool("autoAdvance", autoAdvanceDefault) > 0;
+    persisted &= preferences.putBool("returnStart", returnToStartDefault) > 0;
+    if (!persisted) {
+      sendError(request, 500, "settings_persist_failed",
+                "NVS could not save all settings; verify settings after reboot.");
+      return;
+    }
     settings.ssid = ssid;
     settings.password = password;
     settings.maxSpeedDps = nextSpeed;
@@ -402,16 +423,6 @@ void dispatchCommand(AsyncWebServerRequest* request, JsonDocument& doc) {
     settings.defaultScanViews = scanViewsDefault;
     settings.autoAdvanceDefault = autoAdvanceDefault;
     settings.returnToStartDefault = returnToStartDefault;
-    preferences.putString("ssid", settings.ssid);
-    preferences.putString("password", settings.password);
-    preferences.putFloat("maxSpeed", settings.maxSpeedDps);
-    preferences.putFloat("accel", settings.accelerationDps2);
-    preferences.putUInt("settle", settings.settleMs);
-    preferences.putUInt("jogLease", settings.jogLeaseMs);
-    preferences.putFloat("scanDegrees", settings.defaultScanDegrees);
-    preferences.putUShort("scanViews", settings.defaultScanViews);
-    preferences.putBool("autoAdvance", settings.autoAdvanceDefault);
-    preferences.putBool("returnStart", settings.returnToStartDefault);
     JsonDocument response;
     response["ok"] = true;
     response["restartRequired"] = credentialsChanged;
@@ -450,10 +461,14 @@ void dispatchCommand(AsyncWebServerRequest* request, JsonDocument& doc) {
       return;
     }
     int64_t targetPulse;
+    long double nextExactPosition;
     if (strcmp(modeNameValue, "relative") == 0) {
       targetPulse = turntable::relativeTargetPulses(exactPositionPulses, target);
+      nextExactPosition =
+          turntable::relativePositionExactPulses(exactPositionPulses, target);
     } else if (strcmp(modeNameValue, "absolute") == 0) {
       targetPulse = turntable::absoluteTargetPulses(currentPulses(), zeroPulse, target, policy);
+      nextExactPosition = targetPulse;
     } else {
       sendError(request, 400, "invalid_move", "mode must be relative or absolute.");
       return;
@@ -463,7 +478,7 @@ void dispatchCommand(AsyncWebServerRequest* request, JsonDocument& doc) {
       return;
     }
     rememberOperation(operationId);
-    exactPositionPulses = targetPulse;
+    exactPositionPulses = nextExactPosition;
     moveToPulses(targetPulse, MotionKind::Move, speed);
     sendStatus(request, 202);
     return;
@@ -696,6 +711,7 @@ void dispatchCommand(AsyncWebServerRequest* request, JsonDocument& doc) {
     }
     rememberOperation(operationId);
     zeroPulse = currentPulses();
+    exactPositionPulses = currentPulses();
     positionVerified = true;
     sendStatus(request);
     return;
@@ -707,6 +723,7 @@ void dispatchCommand(AsyncWebServerRequest* request, JsonDocument& doc) {
       return;
     }
     rememberOperation(operationId);
+    exactPositionPulses = zeroPulse;
     moveToPulses(zeroPulse, MotionKind::Move, settings.maxSpeedDps);
     sendStatus(request, 202);
     return;
@@ -784,7 +801,11 @@ void handlePostBody(AsyncWebServerRequest* request, uint8_t* data, size_t len,
 }
 
 void loadSettings() {
-  preferences.begin("turntable", false);
+  if (!preferences.begin("turntable", false)) {
+    settings = Settings();
+    scanMessage = "NVS unavailable; using safe defaults for this boot.";
+    return;
+  }
   settings.ssid = preferences.getString("ssid", config::DEFAULT_AP_SSID);
   settings.password = preferences.getString("password", config::DEFAULT_AP_PASSWORD);
   settings.maxSpeedDps = preferences.getFloat("maxSpeed", config::DEFAULT_MAX_SPEED_DPS);
@@ -931,7 +952,10 @@ void updateMotion() {
     const MotionKind completed = motion;
     motion = MotionKind::Idle;
     manualStopPending = false;
-    exactPositionPulses = currentPulses();
+    if (completed != MotionKind::Move ||
+        currentPulses() != expectedTargetPulse) {
+      exactPositionPulses = currentPulses();
+    }
     if (completed == MotionKind::Scan) {
       if (scanCancelPending) {
         scanSequence.cancelStopped();
