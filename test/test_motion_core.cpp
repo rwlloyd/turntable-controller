@@ -2,8 +2,8 @@
 #include <cmath>
 #include <iostream>
 
-#include "motion_core.h"
-#include "scan_sequence.h"
+#include "../TurntableController/motion_core.h"
+#include "../TurntableController/scan_sequence.h"
 
 using namespace turntable;
 
