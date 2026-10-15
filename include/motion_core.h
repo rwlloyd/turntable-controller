@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 
@@ -18,6 +19,20 @@ inline int64_t pulsesFromDegrees(double degrees) {
   }
   return static_cast<int64_t>(std::llround(
       degrees * config::PULSES_PER_TABLE_REV / config::DEGREES_PER_REV));
+}
+
+inline int64_t relativeTargetPulses(long double currentExactPulses,
+                                    double deltaDegrees) {
+  if (!finite(deltaDegrees)) return 0;
+  const long double target = currentExactPulses +
+      static_cast<long double>(deltaDegrees) * config::PULSES_PER_TABLE_REV /
+          config::DEGREES_PER_REV;
+  if (!std::isfinite(target) ||
+      target > static_cast<long double>(std::numeric_limits<int64_t>::max()) ||
+      target < static_cast<long double>(std::numeric_limits<int64_t>::min())) {
+    return 0;
+  }
+  return static_cast<int64_t>(std::round(target));
 }
 
 inline double degreesFromPulses(int64_t pulses) {
@@ -99,6 +114,17 @@ inline bool validMotionSettings(float maxSpeed, float acceleration,
          acceleration <= config::MAX_ACCEL_DPS2 && settleMs <= 60000 &&
          jogLeaseMs >= config::MIN_JOG_LEASE_MS &&
          jogLeaseMs <= config::MAX_JOG_LEASE_MS;
+}
+
+inline bool validScanDefaults(double totalDegrees, uint16_t views) {
+  return finite(totalDegrees) && totalDegrees > 0.0 &&
+         totalDegrees <= config::MAX_SCAN_ANGLE && views >= 1 &&
+         views <= config::MAX_SCAN_VIEWS;
+}
+
+inline bool validApCredentials(std::size_t ssidLength, std::size_t passwordLength) {
+  return ssidLength >= 1 && ssidLength <= 32 && passwordLength >= 8 &&
+         passwordLength <= 63;
 }
 
 }  // namespace turntable
