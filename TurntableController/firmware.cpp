@@ -22,6 +22,8 @@ namespace {
 using turntable::DirectionPolicy;
 using turntable::ScanDefinition;
 using turntable::ScanMode;
+using turntable::ScanSequence;
+using turntable::ScanState;
 
 enum class MotionKind { Idle, Move, Jog, Continuous, Scan, Return };
 
