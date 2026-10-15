@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101827">
+  <title>Turntable Controller</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">ESP32 · LOCAL CONTROL</p>
+        <h1>Turntable</h1>
+      </div>
+      <div id="connection" class="connection offline"><span class="dot"></span><span>Connecting…</span></div>
+    </header>
+
+    <section class="hero panel" aria-labelledby="position-title">
+      <div>
+        <p class="eyebrow" id="position-title">ESTIMATED TABLE ANGLE</p>
+        <div class="angle"><span id="angle">—</span><small>°</small></div>
+        <p id="confidence" class="muted">Position unverified · no encoder</p>
+      </div>
+      <div class="status-stack">
+        <span id="motor" class="badge">Motor unknown</span>
+        <span id="motion" class="badge">Idle</span>
+      </div>
+    </section>
+    <p class="notice"><strong>Safety:</strong> This controller has no physical emergency stop, end stops, encoder, or driver-fault feedback. The browser Stop control is not a safety-rated emergency stop.</p>
+    <div id="message" class="message" role="status" aria-live="polite"></div>
+
+    <div class="columns">
+      <section class="panel">
+        <h2>Manual movement</h2>
+        <label class="field">Speed <output id="speed-label">15°/s</output>
+          <input id="speed" type="range" min="0.5" max="30" step="0.5" value="15">
+        </label>
+        <div class="jog-row">
+          <button id="jog-ccw" class="button secondary" type="button">◀ Hold CCW</button>
+          <button id="jog-cw" class="button secondary" type="button">Hold CW ▶</button>
+        </div>
+        <div class="quick" aria-label="Relative angle moves">
+          <button class="chip" data-step="1">1°</button><button class="chip" data-step="5">5°</button>
+          <button class="chip" data-step="10">10°</button><button class="chip" data-step="15">15°</button>
+          <button class="chip" data-step="30">30°</button><button class="chip" data-step="45">45°</button>
+          <button class="chip" data-step="90">90°</button><button class="chip" data-step="180">180°</button>
+        </div>
+        <div class="form-row">
+          <label class="field">Relative angle (°)<input id="relative" type="number" value="10" step="any"></label>
+          <button id="relative-go" class="button" type="button">Move</button>
+        </div>
+        <div class="form-row">
+          <label class="field">Absolute angle (°)<input id="absolute" type="number" value="0" step="any"></label>
+          <label class="field">Direction
+            <select id="direction-policy">
+              <option value="shortest">Shortest path</option>
+              <option value="clockwise">Clockwise</option>
+              <option value="counterclockwise">Counterclockwise</option>
+            </select>
+          </label>
+          <button id="absolute-go" class="button" type="button">Go</button>
+        </div>
+        <div class="button-row">
+          <button id="zero" class="button secondary">Set Zero</button>
+          <button id="go-zero" class="button secondary">Go to Zero</button>
+        </div>
+        <div class="form-row">
+          <label class="field">Continuous direction
+            <select id="continuous-direction">
+              <option value="clockwise">Clockwise</option><option value="counterclockwise">Counterclockwise</option>
+            </select>
+          </label>
+          <button id="continuous-start" class="button secondary">Rotate continuously</button>
+        </div>
+        <div class="button-row">
+          <button id="stop" class="button danger">Stop / pause scan</button>
+          <button id="motor-enable" class="button secondary">Enable motor</button>
+          <button id="motor-disable" class="button secondary">Disable motor</button>
+        </div>
+        <p class="hint">Disabling the driver removes holding torque and can allow external movement.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Automated scan</h2>
+        <div class="form-row">
+          <label class="field">Pattern
+            <select id="scan-mode"><option value="views">Number of views</option><option value="increment">Angle increment</option></select>
+          </label>
+          <label class="field">Total angle (°)<input id="scan-angle" type="number" value="360" min="0.1" max="3600" step="any"></label>
+        </div>
+        <div class="form-row">
+          <label id="views-field" class="field">Views<input id="scan-views" type="number" value="36" min="1" max="1000"></label>
+          <label id="increment-field" class="field hidden">Increment (°)<input id="scan-increment" type="number" value="10" min="0.1" step="any"></label>
+          <label class="field">Scan speed (°/s)<input id="scan-speed" type="number" value="15" min="0.5" max="30" step="0.5"></label>
+        </div>
+        <label class="check"><input id="auto-advance" type="checkbox"> Auto-advance after settling (no camera feedback)</label>
+        <label class="check"><input id="return-start" type="checkbox"> Return to starting estimated position</label>
+        <button id="scan-start" class="button primary full">Start scan</button>
+        <div class="scan-status">
+          <div><span class="muted">State</span><strong id="scan-state">Idle</strong></div>
+          <div><span class="muted">View</span><strong id="scan-view">—</strong></div>
+          <div><span class="muted">Target</span><strong id="scan-target">—</strong></div>
+        </div>
+        <div class="progress-line"><progress id="scan-progress" max="100" value="0"></progress><span id="scan-percent">0%</span></div>
+        <p id="scan-message" class="hint">The initial position is view 1. Each view excludes the total-angle endpoint to avoid a duplicate.</p>
+        <div class="button-row">
+          <button id="scan-ack" class="button primary">Ready · Next view</button>
+          <button id="scan-pause" class="button secondary">Pause</button>
+          <button id="scan-resume" class="button secondary">Resume</button>
+          <button id="scan-cancel" class="button danger">Cancel scan</button>
+        </div>
+      </section>
+    </div>
+
+    <details class="panel settings">
+      <summary>Settings</summary>
+      <p class="hint">Saved in ESP32 NVS. Changing the AP name or password requires a reboot; no physical position is persisted.</p>
+      <div class="form-row">
+        <label class="field">Maximum speed (°/s)<input id="setting-speed" type="number" min="0.5" max="30" step="0.5"></label>
+        <label class="field">Acceleration (°/s²)<input id="setting-accel" type="number" min="0.5" max="30" step="0.5"></label>
+        <label class="field">Settle time (ms)<input id="setting-settle" type="number" min="0" max="60000"></label>
+        <label class="field">Jog lease (ms)<input id="setting-lease" type="number" min="300" max="5000"></label>
+        <label class="field">Default scan angle (°)<input id="setting-scan-angle" type="number" min="0.1" max="3600" step="any"></label>
+        <label class="field">Default scan views<input id="setting-scan-views" type="number" min="1" max="1000"></label>
+      </div>
+      <label class="check"><input id="setting-auto-advance" type="checkbox"> Auto-advance by default</label>
+      <label class="check"><input id="setting-return-start" type="checkbox"> Return to start by default</label>
+      <div class="form-row">
+        <label class="field">Access point name<input id="setting-ssid" maxlength="32"></label>
+        <label class="field">New AP password (8–63 characters)<input id="setting-password" type="password" minlength="8" maxlength="63" autocomplete="new-password"></label>
+      </div>
+      <button id="settings-save" class="button secondary">Save settings</button>
+    </details>
+    <footer>Commanded position is an estimate. Microstep resolution is not mechanical accuracy.</footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
